@@ -10,20 +10,16 @@ tags:
 
 # Azure VM Connector release notes
 
-## General
+## 26
 
-The AzureVM Connector supports two sub-type options.
+### 26.0.0
 
-### Enterprise Manager
+*05/2026*
 
-Enterprise Manager provides a sub-type plug-in module that is copied into the Enterprise Manager plugins directory. The plug-in provides a mechanism to create the command-line options required when running the connector.
+This release addresses security vulnerabilities in third-party libraries.
 
-The sub-type is available as a Windows job sub-type named **Azure VM**.
+#### Bug fixes
 
-### Solution Manager
+**Replaced the abandoned org.ini4j library to remediate [CVE-2022-41404](https://nvd.nist.gov/vuln/detail/CVE-2022-41404).** The org.ini4j project is no longer maintained. The dependency was replaced with a custom internal implementation.
 
-OpCon version 25.0.3 or greater includes the ACS framework. The ACS framework provides the sub-type mechanism for the AzureVM connector. It centralizes the `Connector.config` file within the OpCon environment and provides a wrapper to the AzureVM connector.
-
-The supplied integration is available from the FTP site under **integrations**. Download and extract the items, then copy them into the **\\plugins\\ACSAZUREVM** directory.
-
-The implementation is available as an ACS Agent named **AzureVM** with an associated job that provides several task types.
+**Upgraded the Jackson libraries from 2.10.0 to 2.18.2.** The previous version contained multiple known vulnerabilities. This update brings the dependency to a current, supported release.
