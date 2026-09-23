@@ -35,7 +35,7 @@ Before defining Azure VM jobs in Solution Manager, confirm the following:
 
 To define an Azure VM job in Solution Manager, complete the following steps:
 
-1. In Solution Manager, navigate to the job definition.
+1. In Solution Manager, go to the job definition.
 2. From the **Job Type** list, select **AzureVM**.
 3. From the **Task Type** list, select the task to perform.
 4. Enter the required field values for the selected task.
@@ -72,6 +72,25 @@ Creates a new virtual machine in the Azure environment from a defined image.
 | **Admin User** | Yes | The administrator user name for the VM, following the naming requirements for the selected VM type |
 | **User Password** | Yes | The password for the administrator user |
 
+:::caution Not every combination of image, operating system and network is supported
+Creating a virtual machine behaves differently depending on the three choices you make. The following combinations work as described:
+
+| Image | Network | Windows | Linux |
+|---|---|---|---|
+| Standard | New (`new`) | Supported | **Not supported** — nothing is created and the job fails |
+| Standard | Existing | Creates the machine, then **reports failure** | Supported |
+| Custom | New (`new`) | Supported | Supported |
+| Custom | Existing | Creates the machine, then **reports failure** | Supported |
+
+To create a Linux machine on a new network, use a custom image. To create a Windows machine on an existing network, expect the job to fail and check Azure before rerunning it.
+:::
+
+:::caution A reported failure does not always mean nothing was created
+When the virtual machine is a **Windows** machine being added to an **existing** network, the connector creates the machine but then reports the job as failed and returns `1`. The machine exists in Azure, and neither IP address property is set.
+
+Check the resource group in Azure before rerunning the job. If the machine is there, delete it first, or the rerun creates a second one.
+:::
+
 ### Deallocate virtual machine
 
 Stops the virtual machine and deallocates all its resources. The VM is removed from the allocated resource pool.
@@ -102,13 +121,15 @@ Sample output:
 
 ```
 ------------------------------------------------------------------------------------------------------------------ 
-Virtual Machine Name     Region              Current State                 IP Private     IP Public      OS Type    
+List of virtual machines in resource Group  MY_RESOURCEGROUP
 ------------------------------------------------------------------------------------------------------------------ 
-LINUX001                 West Europe         PowerState/running            10.1.0.17      52.178.65.0    LINUX      
-LINUX002                 West Europe         PowerState/running            10.1.0.16      13.95.134.20   LINUX      
-LINUX003                 West Europe         PowerState/running            10.1.0.18      13.95.106.31   LINUX      
-OpCon                    West Europe         PowerState/running            10.1.0.6       52.166.248.28  WINDOWS    
-SDM2                     West Europe         PowerState/stopped            10.1.0.9       168.63.108.63  LINUX      
+Virtual Machine Name     Region              Current State                 IP Private     IP Public      OS Type   
+------------------------------------------------------------------------------------------------------------------ 
+LINUX001                 West Europe         PowerState/running            10.0.0.11      203.0.113.11   LINUX     
+LINUX002                 West Europe         PowerState/running            10.0.0.12      203.0.113.12   LINUX     
+LINUX003                 West Europe         PowerState/running            10.0.0.13      203.0.113.13   LINUX     
+WINSRV01                 West Europe         PowerState/running            10.0.0.14      203.0.113.14   WINDOWS   
+LINUX004                 West Europe         PowerState/stopped            10.0.0.15      N/A            LINUX     
 ------------------------------------------------------------------------------------------------------------------ 
 ```
 
@@ -149,8 +170,14 @@ Starts a stopped virtual machine. Optionally stores the IP addresses after start
 |---|---|
 | `0` | Success — the job completed processing |
 | `1` | Failure — an exception occurred during job processing |
+| `99` | A credential value in `Connector.config` is missing |
+| `401` | A credential value in `Connector.config` is present but empty |
 
-To detect a failure, set the **Failure Criteria** for the job to **NE** (Not Equal) to `0`.
+To detect a failure, set the **Failure Criteria** for the job to **NE** (Not Equal) to `0`, which catches all three failure codes.
+
+:::note `99` and `401` point at the configuration file, not at Azure
+Both codes mean the connector could not read an encoded value from the `Connector.config` script. Despite its resemblance to an HTTP status, `401` is not a rejection by Azure or by the OpCon API.
+:::
 
 ## Logging
 
@@ -167,8 +194,8 @@ Yes. In the **Private IP Address Property Name** and **Public IP Address Propert
 **Where does the connector find the Azure credentials for Solution Manager jobs?**
 The credentials are read from the `Connector.config` script stored in Solution Manager. The AzureVM agent definition links the job to the correct config script.
 
-**Can I add custom images or regions to the drop-down lists?**
-Yes. Edit the data script associated with the AzureVM agent. Add entries using the `IMAGE image-name`, `SIZE size-name`, or `REGION region-name` format. The new values appear in the drop-down lists when defining a job.
+**Can I add custom images or regions to the lists?**
+Yes. Edit the data script associated with the AzureVM agent. Add entries using the `IMAGE image-name`, `SIZE size-name`, or `REGION region-name` format. The new values appear in the lists when defining a job. Image names must follow the `publisher_offer_sku` form described in [Installation](./installation.md).
 
 **How do I retrieve job output after a job runs?**
 Use Solution Manager's JORS capability to view job output. Select the completed job and use the **View Output** option to access the connector log for that run.
@@ -183,6 +210,6 @@ Use Solution Manager's JORS capability to view job output. Select the completed 
 
 **Resource group** — An Azure container that holds related resources such as virtual machines. All connector tasks target a single resource group per job.
 
-**JORS** — Job Output Retrieval System. The OpCon feature that stores and provides access to job execution output logs. Used to review connector output and diagnose issues.
+**JORS** — Job Output Retrieval System. The OpCon feature that stores and provides access to job output logs. Used to review connector output and diagnose issues.
 
-**Data script** — The Solution Manager script associated with an AzureVM agent that defines the available drop-down values (types, regions, images, sizes) used when defining Azure VM jobs.
+**Data script** — The Solution Manager script associated with an AzureVM agent that defines the available values (types, regions, images, sizes) used when defining Azure VM jobs.

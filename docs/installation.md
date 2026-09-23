@@ -14,7 +14,7 @@ tags:
 
 ## What is it?
 
-The Azure VM Connector installation prepares the connector and OpCon environment to run Azure VM automation jobs. Installation involves placing the connector files on a Windows agent, encrypting Azure account credentials, and configuring either the Enterprise Manager or Solution Manager sub-type.
+The Azure VM Connector installation prepares the connector and OpCon environment to run Azure VM automation jobs. Installation involves placing the connector files on a Windows agent, encoding Azure account credentials, and configuring either the Enterprise Manager or Solution Manager sub-type.
 
 - Use this procedure when setting up the connector for the first time in your OpCon environment.
 - Use this procedure when adding a new Windows agent or OpCon instance that needs Azure VM automation capability.
@@ -54,29 +54,33 @@ To install the connector files, complete the following steps:
 2. Extract the zip file to the directory where you want to install the connector.
 3. Confirm that the following items are present in the root installation directory after extraction:
    - `AzureVM.exe` — the connector executable
-   - `Encrypt.exe` — the encryption utility
+   - `Encrypt.exe` — the encoding utility
    - `Connector.config` — the connector configuration file
    - `java/` — directory containing the bundled OpenJDK 11
    - `emplugins/` — directory containing the Enterprise Manager plug-in
 
-### Encrypt credentials using the Encrypt utility
+### Encode credentials using the Encrypt utility
 
-The Encrypt utility uses standard 64-bit encryption. Use it to encrypt all credential values before placing them in `Connector.config`.
+`Encrypt.exe` encodes a value so that it is not readable at a glance in `Connector.config`. Use it on every credential value before placing it in the file.
 
-To encrypt a value, complete the following steps:
+:::caution Encoding is not encryption
+The value is base64-encoded and then hex-encoded. There is no key, so anyone who can read `Connector.config` can recover the original credential. Treat the file as a secret in its own right: restrict its file permissions to the account the OpCon agent runs as, keep it out of source control, and protect it wherever it is backed up.
+:::
+
+To encode a value, complete the following steps:
 
 1. Open a command prompt on the Windows server where the connector is installed.
-2. Run the following command, replacing `value` with the text to encrypt:
+2. Run the following command, replacing `value` with the text to encode:
 
 ```
-EncryptValue.exe -v "value"
+Encrypt.exe -v "value"
 ```
 
-3. Copy the encrypted output. You will use it in the `Connector.config` file.
+3. Copy the encoded output. You will use it in the `Connector.config` file.
 
 ### Configure the Connector.config file
 
-The `Connector.config` file stores Azure account credentials and the OpCon API connection details. All credential values must be encrypted before being added to the file.
+The `Connector.config` file stores Azure account credentials and the OpCon API connection details. All credential values must be encoded with `Encrypt.exe` before being added to the file.
 
 The Azure account information required consists of the subscription ID, the tenant ID, the client ID, and the secret key. Retrieve these values from your Azure environment.
 
@@ -95,7 +99,11 @@ The `--setup` switch requires the following arguments:
 | `-address` | The address and port number of the OpCon REST API server |
 | `-tls` | Include this flag if the OpCon REST API requires a TLS connection |
 
-The following shows an example `Connector.config` file after setup:
+:::note The OpCon REST API certificate is not validated
+The connector does not check the OpCon REST API server certificate, so a TLS connection here encrypts the traffic but does not confirm which server answered. Treat the connection between the connector and the OpCon REST API as one that needs a trusted network.
+:::
+
+The following shows an example `Connector.config` file after setup. The keyword spellings below are the ones the connector reads — note that the OpCon API keywords have no underscore between `OPCON` and `API`:
 
 ```
 [CONNECTOR]
@@ -103,28 +111,54 @@ NAME=Azure VM Connector
 DEBUG=OFF
 
 [MSAZURE]
-TENANT = (encrypted value)
-SUBSCRIPTION = (encrypted value)
-CLIENT = (encrypted value)
-KEY = (encrypted value)
+TENANT = (encoded value)
+SUBSCRIPTION = (encoded value)
+CLIENT = (encoded value)
+KEY = (encoded value)
 
 [OPCON API]
 OPCONAPI_ADDRESS = address:port
 OPCONAPI_USING_TLS = True
-OPCONAPI_TOKEN = (encrypted value)
+OPCONAPI_TOKEN = (encoded value)
 ```
 
 The configuration keywords are defined as follows:
 
-| Keyword | Type | Description |
-|---|---|---|
-| `TENANT` | Text | The encrypted tenant ID |
-| `SUBSCRIPTION` | Text | The encrypted subscription ID |
-| `CLIENT` | Text | The encrypted client ID |
-| `KEY` | Text | The encrypted secret key |
-| `OPCON_API_ADDRESS` | Text | The OpCon REST API address. Set by the `--setup` switch |
-| `OPCON_API_USING_TLS` | Text | Whether the OpCon REST API uses TLS. Set by the `--setup` switch |
-| `OPCON_API_TOKEN` | Text | The encrypted application token. Set by the `--setup` switch |
+| Keyword | Section | Type | Description |
+|---|---|---|---|
+| `NAME` | `[CONNECTOR]` | Text | A display name for this connector instance. Used in logging |
+| `DEBUG` | `[CONNECTOR]` | Text | `ON` adds OpCon REST API request and response logging. Any other value, such as `OFF`, leaves it off. **The keyword must be present** |
+| `TENANT` | `[MSAZURE]` | Text | The encoded tenant ID |
+| `SUBSCRIPTION` | `[MSAZURE]` | Text | The encoded subscription ID |
+| `CLIENT` | `[MSAZURE]` | Text | The encoded client ID |
+| `KEY` | `[MSAZURE]` | Text | The encoded secret key |
+| `OPCONAPI_ADDRESS` | `[OPCON API]` | Text | The OpCon REST API address. Set by the `--setup` switch |
+| `OPCONAPI_USING_TLS` | `[OPCON API]` | Text | Whether the OpCon REST API uses TLS. Set by the `--setup` switch |
+| `OPCONAPI_TOKEN` | `[OPCON API]` | Text | The encoded application token. Set by the `--setup` switch |
+
+:::caution Do not remove the `DEBUG` keyword
+The connector reads `DEBUG` without a default and fails to start if the keyword is missing. To turn the extra logging off, set it to `OFF` rather than deleting the line.
+:::
+
+:::note `DEBUG` does not control the connector's own log file
+The connector writes its own log regardless of this setting. Refer to [Connector log file](#connector-log-file).
+:::
+
+### Connector log file
+
+The connector writes a log file of its own, separately from the job output that OpCon captures. It is enabled by default and needs no configuration.
+
+| Property | Value |
+|---|---|
+| Location | `<installation_dir>\log\storage.log` |
+| Rolls at | 100 MB |
+| History kept | Previous files are removed when the connector starts |
+
+:::caution The log file contains your credentials in readable form
+Each run records the Azure tenant ID, subscription ID, client ID and secret key, and the OpCon API token, **after decoding them**. The values that are encoded in `Connector.config` appear in this file as plain text.
+
+Restrict access to the `log` directory to the account the OpCon agent runs as, and remove or redact the file before sharing it with anyone, including when attaching diagnostics to a support case.
+:::
 
 ### Enterprise Manager sub-type installation
 
@@ -143,7 +177,7 @@ Create a global property named `AzureVmPath` that contains the full path of the 
 
 #### Create special global properties
 
-The Azure VM Connector uses three global properties to populate drop-down lists when creating virtual machine job definitions.
+The Azure VM Connector uses three global properties to populate the lists offered when creating virtual machine job definitions.
 
 | Property | Description |
 |---|---|
@@ -151,18 +185,28 @@ The Azure VM Connector uses three global properties to populate drop-down lists 
 | `AZURE_LINUX_SERVERS` | Comma-separated list of Linux VM image names. Double quotes surrounding each value must be retained. |
 | `AZURE_SERVER_SIZES` | Comma-separated list of VM size names. Double quotes surrounding each value must be retained. |
 
+Each image name must be written as `publisher_offer_sku`, using the Azure publisher, offer and SKU names joined by underscores. The connector splits the name on the underscores to look the image up, so a name in any other form is not found.
+
+:::tip Example
+`Canonical_UbuntuServer_18.04-LTS` selects the publisher `Canonical`, the offer `UbuntuServer` and the SKU `18.04-LTS`.
+:::
+
+:::note An image version cannot be pinned
+The connector uses the most recently published image under the SKU you name. If you need a specific version, use a custom image instead.
+:::
+
 Sample values for each property are provided in the lists below.
 
 ```
 List of Windows Virtual Machines 
 
 "MicrosoftSQLServer_SQL2012SP3-WS2012R2_Enterprise","MicrosoftSQLServer_SQL2012SP4-WS2012R2_Enterprise","MicrosoftSQLServer_SQL2012SP4-WS2012R2_Express","MicrosoftSQLServer_SQL2012SP4-WS2012R2_Standard","MicrosoftSQLServer_SQL2014SP2-WS2012R2_Enterprise","MicrosoftSQLServer_SQL2014SP2-WS2012R2_Express",
-"MicrosoftSQLServer_SQL2014SP2-WS2012R2_Standard","MicrosoftSQLServer_sql2014sp3-ws2012r2_enterprise","MicrosoftSQLServer_sql2014sp3-ws2012r2_express","MicrosoftSQLServer_sql2014sp3-ws2012r2_standard","MicrosoftSQLServer_SQL2016-WS2012R2_Enterprise","MicrosoftSQLServer_SQL2016SP1-WS2016_Enterprise","MicrosoftSQLServer_SQL2016SP1-WS2016_Express","MicrosoftSQLServer_SQL2016SP1-WS2016_Standard","MicrosoftSQLServer_SQL2016SP2-WS2016_Enterprise","MicrosoftSQLServer_SQL2016SP2-WS2016_Express","MicrosoftSQLServer_SQL2016SP2-WS2016_Standard","MicrosoftSQLServer_SQL2017-WS2016_Enterprise,"MicrosoftWindowsServer_WindowsServer_2012-Datacenter","MicrosoftWindowsServer_WindowsServer_2012-R2-Datacenter","MicrosoftWindowsServer_WindowsServer_2016-Datacenter","MicrosoftWindowsServer_WindowsServer_2019-Datacenter"
+"MicrosoftSQLServer_SQL2014SP2-WS2012R2_Standard","MicrosoftSQLServer_sql2014sp3-ws2012r2_enterprise","MicrosoftSQLServer_sql2014sp3-ws2012r2_express","MicrosoftSQLServer_sql2014sp3-ws2012r2_standard","MicrosoftSQLServer_SQL2016-WS2012R2_Enterprise","MicrosoftSQLServer_SQL2016SP1-WS2016_Enterprise","MicrosoftSQLServer_SQL2016SP1-WS2016_Express","MicrosoftSQLServer_SQL2016SP1-WS2016_Standard","MicrosoftSQLServer_SQL2016SP2-WS2016_Enterprise","MicrosoftSQLServer_SQL2016SP2-WS2016_Express","MicrosoftSQLServer_SQL2016SP2-WS2016_Standard","MicrosoftSQLServer_SQL2017-WS2016_Enterprise","MicrosoftWindowsServer_WindowsServer_2012-Datacenter","MicrosoftWindowsServer_WindowsServer_2012-R2-Datacenter","MicrosoftWindowsServer_WindowsServer_2016-Datacenter","MicrosoftWindowsServer_WindowsServer_2019-Datacenter"
 
 List of Linux Virtual Machines 
 
-"Canonical_UbuntuServer_12.04.3-LTS","Canonical_UbuntuServer_12.04.4-LTS","Canonical_UbuntuServer_12.04.5-LTS","Canonical_UbuntuServer_14.04.0-LTS","Canonical_UbuntuServer_14.04.1-LTS","Canonical_UbuntuServer_14.04.2-LTS","Canonical_UbuntuServer_14.04.2-LTS","Canonical_UbuntuServer_14.04.3-LTS","Canonical_UbuntuServer_14.04.4-LTS","Canonical_UbuntuServer_14.04.5-LTS","Canonical_UbuntuServer_16.04-LTS","Canonical_UbuntuServer_16.04.0","Canonical_UbuntuServer_18.04","Canonical_UbuntuServer_18.10","RedHat_RHEL_6.7","RedHat_RHEL_6.8","RedHat_RHEL_6.9","RedHat_RHEL_6.10","RedHat_RHEL_7.2","RedHat_RHEL_7.3","RedHat_RHEL_7.4",
-"RedHat_RHEL_7.5","SUSE_SLES_11-SP4","SUSE_SLES_12-SP4","SUSE_SLES_15","SUSE_SLES_15","MicrosoftSQLServer_SQL2017-RHEL7_Enterprise","MicrosoftSQLServer_SQL2017-RHEL7_Express","MicrosoftSQLServer_SQL2017-RHEL7_Standard","MicrosoftSQLServer_SQL2017-SLES12SP2_Enterprise","MicrosoftSQLServer_SQL2017-SLES12SP2_Express","MicrosoftSQLServer_SQL2017-Ubuntu1604_Enterprise","MicrosoftSQLServer_SQL2017-Ubuntu1604_Express"
+"Canonical_UbuntuServer_12.04.3-LTS","Canonical_UbuntuServer_12.04.4-LTS","Canonical_UbuntuServer_12.04.5-LTS","Canonical_UbuntuServer_14.04.0-LTS","Canonical_UbuntuServer_14.04.1-LTS","Canonical_UbuntuServer_14.04.2-LTS","Canonical_UbuntuServer_14.04.3-LTS","Canonical_UbuntuServer_14.04.4-LTS","Canonical_UbuntuServer_14.04.5-LTS","Canonical_UbuntuServer_16.04-LTS","Canonical_UbuntuServer_16.04.0","Canonical_UbuntuServer_18.04","Canonical_UbuntuServer_18.10","RedHat_RHEL_6.7","RedHat_RHEL_6.8","RedHat_RHEL_6.9","RedHat_RHEL_6.10","RedHat_RHEL_7.2","RedHat_RHEL_7.3","RedHat_RHEL_7.4",
+"RedHat_RHEL_7.5","SUSE_SLES_11-SP4","SUSE_SLES_12-SP4","SUSE_SLES_15","MicrosoftSQLServer_SQL2017-RHEL7_Enterprise","MicrosoftSQLServer_SQL2017-RHEL7_Express","MicrosoftSQLServer_SQL2017-RHEL7_Standard","MicrosoftSQLServer_SQL2017-SLES12SP2_Enterprise","MicrosoftSQLServer_SQL2017-SLES12SP2_Express","MicrosoftSQLServer_SQL2017-Ubuntu1604_Enterprise","MicrosoftSQLServer_SQL2017-Ubuntu1604_Express"
 
 List of Virtual Machine Sizes
 
@@ -186,7 +230,7 @@ To install the Solution Manager sub-type, complete the following steps:
 
 #### Create the scripts
 
-When using the Solution Manager sub-type, two scripts must be created: one containing the `Connector.config` information and one containing the drop-down list information.
+When using the Solution Manager sub-type, two scripts must be created: one containing the `Connector.config` information and one containing the list information.
 
 To create the required script type and runner, complete the following steps:
 
@@ -216,7 +260,7 @@ To create the Connector.config script, complete the following steps:
 6. In the **Script** field, paste the contents of your `Connector.config` file.
 7. Select **Save**.
 
-To create the drop-down information script, complete the following steps:
+To create the list information script, complete the following steps:
 
 1. In Solution Manager, select **Library** > **Scripts**.
 2. Select **Scripts** from the upper right, then select **+Add**.
@@ -502,8 +546,8 @@ To create the AzureVM agent in Solution Manager, complete the following steps:
 
 ## FAQs
 
-**Do I need to encrypt all values in Connector.config?**
-Yes. The tenant ID, subscription ID, client ID, secret key, and OpCon API token must all be encrypted using `EncryptValue.exe` before being placed in `Connector.config`. The `--setup` switch encrypts and inserts the OpCon API token automatically.
+**Do I need to encode all values in Connector.config?**
+Yes. The tenant ID, subscription ID, client ID, secret key, and OpCon API token must all be encoded using `Encrypt.exe` before being placed in `Connector.config`. The `--setup` switch encodes and inserts the OpCon API token automatically. Encoding is not encryption and does not protect the file — refer to [Encode credentials using the Encrypt utility](#encode-credentials-using-the-encrypt-utility).
 
 **What happens if I install the Enterprise Manager plug-in and the Azure VM sub-type does not appear?**
 Restart Enterprise Manager using **Run as Administrator**. If the sub-type still does not appear, confirm that the plug-in `.jar` file was copied to the correct `dropins` directory and that Enterprise Manager was fully restarted.
@@ -518,9 +562,9 @@ The connector supports all Azure regions listed in the data script. Additional r
 
 **ACS framework** — The Agent Configuration Service framework in OpCon 25.0.3 and later that centralizes connector configuration within OpCon and provides a wrapper for ACS-compatible connectors.
 
-**Connector.config** — The configuration file used by the Azure VM Connector to store encrypted Azure account credentials and OpCon API connection settings.
+**Connector.config** — The configuration file used by the Azure VM Connector to store encoded Azure account credentials and OpCon API connection settings.
 
-**EncryptValue.exe** — The encryption utility bundled with the Azure VM Connector. It accepts a plaintext value and returns a 64-bit encrypted string for use in `Connector.config`.
+**Encrypt.exe** — The encoding utility bundled with the Azure VM Connector. It accepts a plaintext value and returns a base64-then-hex encoded string for use in `Connector.config`. The encoding has no key and is reversible, so it conceals a credential from casual reading but does not protect it.
 
 **ACSAZUREVM** — The script type and runner name used to integrate the Azure VM Connector with the Solution Manager ACS framework.
 

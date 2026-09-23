@@ -17,7 +17,7 @@ tags:
 
 The Azure VM Connector is an OpCon connector for Windows that uses the Azure Java SDK to interact with Azure virtual machines. It enables OpCon to automate the full lifecycle of Azure VMs — from provisioning to shutdown — without manual intervention.
 
-- Use this connector when you need to start, stop, restart, or provision Azure virtual machines as part of an automated OpCon workflow.
+- Use this connector when you need to start, stop, deallocate, restart, or provision Azure virtual machines as part of an automated OpCon workflow.
 - Use this connector when you need to list and report on VM status across a resource group as part of a monitoring or operations schedule.
 - Use this connector to integrate cloud VM management with on-premises job scheduling, ensuring VMs are running only when required.
 
@@ -32,7 +32,8 @@ The connector supports the following tasks against Azure virtual machines:
 | **list** | Returns status, region, IP addresses, and OS type for all VMs in the resource group. |
 | **create** | Creates a new virtual machine from a defined image. |
 | **delete** | Removes a virtual machine from the resource group. |
-| **poweroff** | Powers off a virtual machine (does not deallocate resources). |
+| **poweroff** | Powers off a virtual machine. The machine is stopped but Azure continues to reserve its resources. |
+| **deallocate** | Stops a virtual machine and releases its compute resources, so Azure stops charging for them. |
 | **restart** | Restarts a virtual machine. |
 | **start** | Starts a stopped virtual machine. |
 
@@ -74,6 +75,6 @@ The connector uses an embedded OpenJDK 11 distribution bundled in the `java` dir
 
 **Resource group** — An Azure container that holds related Azure resources, such as virtual machines, for a solution. The Azure VM Connector operates within a single resource group per job definition.
 
-**Connector.config** — The configuration file used by the Azure VM Connector to store Azure account credentials (encrypted) and OpCon API connection settings.
+**Connector.config** — The configuration file used by the Azure VM Connector to store Azure account credentials (encoded) and OpCon API connection settings.
 
 **Sub-type** — A job definition template in OpCon that provides a guided form for entering the arguments required by a specific connector or integration. The Azure VM Connector provides sub-types for both Enterprise Manager and Solution Manager.

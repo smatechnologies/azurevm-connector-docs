@@ -1,8 +1,14 @@
 ---
 slug: '/'
 sidebar_label: 'Azure-VM Connector'
+title: Azure VM Connector
+description: "The Azure VM Connector for OpCon, which automates the full lifecycle of Azure virtual machines as part of scheduled workflows."
 hide_table_of_contents: true
 displayed_sidebar: null
+tags:
+  - Conceptual
+  - System Administrator
+  - Connectors
 ---
 
 # Azure VM Connector
