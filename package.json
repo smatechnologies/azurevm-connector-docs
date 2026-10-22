@@ -24,7 +24,6 @@
     "react-dom": "^18.0.0"
   },
   "resolutions": {
-    "webpack": "5.95.0",
     "tinypool": "^2.1.2",
     "serialize-javascript": "^7.0.5",
     "postcss-selector-parser": "^7.1.6",
